@@ -1,0 +1,855 @@
+#include <SDL.h>
+#include <SDL_image.h>
+#include <stdio.h>
+#include <string>
+#include <SDL_mixer.h>
+#include <iostream>
+
+//Screen dimension constants
+const int SCREEN_WIDTH = 942;
+const int SCREEN_HEIGHT = 656;
+Uint8 unit8 = 255;
+int gemcount = 4;
+struct plate{
+ int a1; //position on board
+ int b1; //position on board
+ int condition;
+ int g;//gem number
+ int x; //position on window
+ int y; //position on window
+ plate(){}
+};
+
+//Texture wrapper class
+class LTexture
+{
+	public:
+		LTexture();
+
+		~LTexture();
+
+		bool loadFromFile( std::string path );
+
+        void setColor( Uint8 red, Uint8 green, Uint8 blue );
+
+		void setBlendMode( SDL_BlendMode blending );
+
+		void setAlpha( Uint8 alpha );
+
+		void free();
+
+		void render( int x, int y );
+
+		int getWidth();
+		int getHeight();
+
+	private:
+		SDL_Texture* mTexture;
+
+		int mWidth;
+		int mHeight;
+};
+
+void renderboard();
+void rerenderboard();
+void getboard();
+void regetboard();
+bool checkboard();
+void clearboard();
+void swap_up();
+bool outofmove();
+void swap_upBOOST2();
+void swap_upgrade();
+void swap_down();
+void swap_left();
+void swap_right();
+void checkpoint();
+bool init();
+
+
+bool loadMedia();
+
+
+void close();
+
+SDL_Window* gWindow = NULL;
+
+SDL_Renderer* gRenderer = NULL;
+
+
+
+LTexture gBackgroundTexture;
+LTexture gem[8];
+int x=68,y=40,a=1,b=1; //cursor direction and codernate
+LTexture blank;
+LTexture cursor;
+LTexture cursor_n;//cursor normal
+LTexture cursor_h;//cursor hexagon
+LTexture name;
+LTexture firstbackground;
+LTexture pressenter;
+
+Mix_Music *music = NULL;
+
+Mix_Chunk *diamond = NULL;
+Mix_Chunk *select = NULL;
+
+LTexture::LTexture()
+{
+	mTexture = NULL;
+	mWidth = 0;
+	mHeight = 0;
+}
+
+LTexture::~LTexture()
+{
+	free();
+}
+
+bool LTexture::loadFromFile( std::string path )
+{
+	free();
+
+	SDL_Texture* newTexture = NULL;
+
+	SDL_Surface* loadedSurface = IMG_Load( path.c_str() );
+	if( loadedSurface == NULL )
+	{
+		printf( "Unable to load image %s! SDL_image Error: %s\n", path.c_str(), IMG_GetError() );
+	}
+	else
+	{
+		SDL_SetColorKey( loadedSurface, SDL_TRUE, SDL_MapRGB( loadedSurface->format, 0xFF, 0xFF, 0xFF ) );
+
+        newTexture = SDL_CreateTextureFromSurface( gRenderer, loadedSurface );
+		if( newTexture == NULL )
+		{
+			printf( "Unable to create texture from %s! SDL Error: %s\n", path.c_str(), SDL_GetError() );
+		}
+		else
+		{
+			mWidth = loadedSurface->w;
+			mHeight = loadedSurface->h;
+		}
+
+		SDL_FreeSurface( loadedSurface );
+	}
+
+	mTexture = newTexture;
+	return mTexture != NULL;
+}
+
+ void LTexture::setColor( Uint8 red, Uint8 green, Uint8 blue )
+{
+	SDL_SetTextureColorMod( mTexture, red, green, blue );
+}
+
+void LTexture::setBlendMode( SDL_BlendMode blending )
+{
+	SDL_SetTextureBlendMode( mTexture, blending );
+}
+
+void LTexture::setAlpha( Uint8 alpha )
+{
+	SDL_SetTextureAlphaMod( mTexture, alpha );
+}
+
+void LTexture::free()
+{
+	if( mTexture != NULL )
+	{
+		SDL_DestroyTexture( mTexture );
+        mTexture=NULL;
+
+	}
+}
+
+void LTexture::render( int x, int y )
+{
+	SDL_Rect renderQuad = { x, y, mWidth, mHeight };
+	SDL_RenderCopy( gRenderer, mTexture, NULL, &renderQuad );
+}
+
+int LTexture::getWidth()
+{
+	return mWidth;
+}
+
+int LTexture::getHeight()
+{
+	return mHeight;
+}
+
+bool init()
+{
+	bool success = true;
+
+	if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO ) < 0 )
+	{
+		printf( "SDL could not initialize! SDL Error: %s\n", SDL_GetError() );
+		success = false;
+	}
+	else
+	{
+
+		if( !SDL_SetHint( SDL_HINT_RENDER_SCALE_QUALITY, "1" ) )
+		{
+			printf( "Warning: Linear texture filtering not enabled!" );
+		}
+
+		gWindow = SDL_CreateWindow( "Kim cương", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN );
+		if( gWindow == NULL )
+		{
+			printf( "Window could not be created! SDL Error: %s\n", SDL_GetError() );
+			success = false;
+		}
+		else
+		{
+			gRenderer = SDL_CreateRenderer( gWindow, -1, SDL_RENDERER_ACCELERATED );
+			if( gRenderer == NULL )
+			{
+				printf( "Renderer could not be created! SDL Error: %s\n", SDL_GetError() );
+				success = false;
+			}
+			else
+			{
+				SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+
+				int imgFlags = IMG_INIT_PNG;
+				if( !( IMG_Init( imgFlags ) & imgFlags ) )
+				{
+					printf( "SDL_image could not initialize! SDL_image Error: %s\n", IMG_GetError() );
+					success = false;
+				}
+				if( Mix_OpenAudio( 44100, MIX_DEFAULT_FORMAT, 2, 2048 ) < 0 )
+				{
+					printf( "SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError() );
+					success = false;
+				}
+			}
+		}
+	}
+
+	return success;
+}
+
+bool loadMedia()
+{
+	bool success = true;
+            gem[0].loadFromFile("image/0.png");
+            cursor_h.loadFromFile( "image/cursor_h.png" );
+            cursor_n.loadFromFile( "image/cursor_n.png" );
+	        gem[1].loadFromFile( "image/1.png" );
+			gem[2].loadFromFile( "image/2.png" );
+            gem[3].loadFromFile( "image/3.png" );
+            gem[4].loadFromFile( "image/4.png" );
+            gem[5].loadFromFile( "image/5.png" );
+            gem[6].loadFromFile( "image/6.png" );
+            gem[7].loadFromFile( "image/7.png" );
+            gem[8].loadFromFile( "image/8.png" );
+            name.loadFromFile( "image/name.png" );
+            firstbackground.loadFromFile( "image/background.png" );
+            pressenter.loadFromFile( "image/pressenter.png" );
+            //sound load
+            music = Mix_LoadMUS( "sound/music.wav" );
+            diamond = Mix_LoadWAV( "sound/diamond.wav" );
+            select = Mix_LoadWAV( "sound/select.wav" );
+
+	if( !gBackgroundTexture.loadFromFile( "image/background (2).png" ) )
+	{
+
+		printf( "Failed to load background texture image!\n" );
+		success = false;
+	}
+
+	return success;
+}
+
+void close()
+{
+
+	for(int i=1;i<9;i++){
+        gem[i].free();
+	}
+	gBackgroundTexture.free();
+	firstbackground.free();
+	name.free();
+    cursor.free();
+    pressenter.free();
+    Mix_FreeChunk( diamond );
+	Mix_FreeChunk( select );
+    Mix_FreeMusic( music );
+	SDL_DestroyRenderer( gRenderer );
+	SDL_DestroyWindow( gWindow );
+	gWindow = NULL;
+	gRenderer = NULL;
+	IMG_Quit();
+	SDL_Quit();
+}
+
+void swap_up(plate p[12][12],plate &now,plate &up){
+    	if(a==1) {return;}
+    	int t=0;
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(i==a and j==b){continue;}
+                    if(i==a-1 and j==b){continue;}
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+                gem[now.g].render(now.x,now.y-t);
+                gem[up.g].render(up.x,up.y+t);
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(10);
+     t++;
+     }
+     t=now.g;now.g=up.g;up.g=t;
+}
+void swap_upBOOST(plate p[12][12],plate &now,plate &up){
+    	if(a==1) {return;}
+    	int t=0;
+       double time=0.07;
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(i==now.a1 and j==up.b1){continue;}
+                    if(i==now.a1-1 and j==up.b1){continue;}
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+                gem[up.g].render(up.x,up.y+t);
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(time*up.a1);
+     t++;
+     }
+     t=now.g;now.g=up.g;up.g=t;
+}
+
+void swap_upBOOST2(plate p[12][12],plate &now){
+    	if(a==1) {return;}
+    	double t=0;
+      int dem=0;
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if (i<=now.a1 and i>=1 and j==now.b1 and p[i][j].g!=0 ) {gem[p[i][j].g].render(p[i][j].x,p[i][j].y+t);}
+                        else{gem[p[i][j].g].render(p[i][j].x,p[i][j].y);}
+                      }}
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(0);
+     t+=0.5;
+     }
+     for(int i=now.a1;i>=2;i--){p[i][now.b1].g=p[i-1][now.b1].g;}
+     p[1][now.b1].g=0;
+
+}
+
+void swap_down(plate p[12][12],plate &now,plate &down){
+    	if(a==10) {return;}
+    	int t=0;
+
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(i==a and j==b){continue;}
+                    if(i==a+1 and j==b){continue;}
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+                gem[now.g].render(now.x,now.y+t);
+                gem[down.g].render(down.x,down.y-t);
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(10);
+     t++;
+     }
+     t=now.g;now.g=down.g;down.g=t;
+}
+
+void swap_left(plate p[12][12],plate &now,plate &left){
+if(b==1) {return;}
+    	int t=0;
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(i==a and j==b){continue;}
+                    if(i==a and j==b-1){continue;}
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+                gem[now.g].render(now.x-t,now.y);
+                gem[left.g].render(left.x+t,left.y);
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(10);
+     t++;
+     }
+     t=now.g;now.g=left.g;left.g=t;
+}
+
+void swap_right(plate p[12][12],plate &now,plate &right){
+if(b==10) {return;}
+    	int t=0;
+
+     while(t<=59){
+            SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(i==a and j==b){continue;}
+                    if(i==a and j==b+1){continue;}
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+                gem[now.g].render(now.x+t,now.y);
+                gem[right.g].render(right.x-t,right.y);
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(10);
+     t++;
+     }
+     t=now.g;now.g=right.g;right.g=t;
+}
+
+bool checkboard(plate p[12][12]){
+   bool check=false;
+   int t=0;
+   for(int i=1;i<=10;i++){
+            for(int j=1;j<=8;j++){
+            if(p[i][j].g==p[i][j+1].g and p[i][j].g==p[i][j+2].g and p[i][j].g!=0 ){
+                    check=true;p[i][j].condition=0;
+                    p[i][j+1].condition=0;p[i][j+2].condition=0;
+            }
+               }
+   }
+      for(int i=1;i<=8;i++){
+            for(int j=1;j<=10;j++){
+            if(p[i][j].g==p[i+1][j].g and p[i][j].g==p[i+2][j].g and p[i][j].g!=0){
+           check=true;p[i][j].condition=0;p[i+1][j].condition=0;
+           p[i+2][j].condition=0;
+            }
+            }
+   }
+          // std::cout<<t<<" ";
+          return check;
+}
+
+void getboard(plate p[12][12]){
+
+  int b=40;int a;int r;
+    for(int i=1;i<=10;i++){
+            a=68;
+            for(int j=1;j<=10;j++){
+                r=rand() % gemcount + 1;
+                p[i][j].a1=i;p[i][j].b1=j;
+                p[i][j].condition=0;
+                p[i][j].g=r;
+                p[i][j].x=a;a+=59;
+                p[i][j].y=b;
+            }
+            b+=59;
+            }
+
+}
+
+void regetboard(plate p[12][12]){
+  int r;
+    for(int i=1;i<=10;i++){
+            for(int j=1;j<=10;j++){
+       if(p[i][j].g==0){ r=rand() % gemcount + 1;
+                p[i][j].g=r;
+       p[i][j].condition=0;
+               }
+            }}
+
+}
+
+ void renderboard(plate p[12][12]){
+            for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                        gem[p[i][j].g].render(p[i][j].x,p[i][j].y);
+                      }}
+}
+
+void rerenderboard(plate p[12][12]){
+      double t;
+
+         for(int i=10;i>=1;i--){
+            t=0;
+            while(t<=40+59*(i-1))
+                     {
+                        SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                     for(int m=1;m<=10;m++){
+                      for(int n=1;n<=10;n++){
+                      if( p[m][n].condition==1){gem[p[m][n].g].render(p[m][n].x,p[m][n].y);}
+                      }}
+     		         for(int k=1;k<=10;k++){
+     		             if(p[i][k].condition==0){
+
+     		         gem[p[i][k].g].render(p[i][k].x,t);}}
+     		         t+=0.5;
+     		         SDL_RenderPresent( gRenderer );
+     		         SDL_Delay(0);
+
+            }
+         for(int k=1;k<=10;k++){ p[i][k].condition=1;}
+           }
+}
+
+void rerenderboardbk(plate p[12][12]){
+      double t;
+         for(int i=10;i>=1;i--){
+          if(i%2==0) {
+		   for(int j=10;j>=1;j--){
+           if(p[i][j].condition==0){
+                        t=0;
+            while(t<=p[i][j].y)
+                     {
+                        SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                     for(int m=1;m<=10;m++){
+                      for(int n=1;n<=10;n++){
+                      if( p[m][n].condition==1){gem[p[m][n].g].render(p[m][n].x,p[m][n].y);}
+                      }}
+     		         gem[p[i][j].g].render(p[i][j].x,t);t+=i/3+1;
+     		         SDL_RenderPresent( gRenderer );
+     		         SDL_Delay(0);
+
+            };
+                      p[i][j].condition=1;
+           }
+          }}
+          else{
+		  for(int j=1;j<=10;j++){
+           if(p[i][j].condition==0){
+                        t=0;
+            while(t<=p[i][j].y)
+                     {
+                        SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                     for(int m=1;m<=10;m++){
+                      for(int n=1;n<=10;n++){
+                      if( p[m][n].condition==1){gem[p[m][n].g].render(p[m][n].x,p[m][n].y);}
+                      }}
+     		         gem[p[i][j].g].render(p[i][j].x,t);t+=i/3+1;
+     		         SDL_RenderPresent( gRenderer );
+     		         SDL_Delay(0);
+
+            };
+                      p[i][j].condition=1;
+           }
+
+		  }
+         }
+
+}
+
+}
+
+void rerenderboard2(plate p[12][12]){
+            double t;
+         for(int i=10;i>=1;i--){
+          if(i%2==0) {
+		   for(int j=10;j>=1;j--){
+           if(p[i][j].condition==0){
+                        t=0;
+            while(t<=p[i][j].y)
+                     {
+                        SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                     for(int m=1;m<=10;m++){
+                      for(int n=1;n<=10;n++){
+                      if( p[m][n].condition==1){gem[p[m][n].g].render(p[m][n].x,p[m][n].y);}
+                      }}
+     		         gem[p[i][j].g].render(p[i][j].x,t);t+=1.2;
+     		         SDL_RenderPresent( gRenderer );
+     		         SDL_Delay(0);
+
+            };
+                      p[i][j].condition=1;
+           }
+          }}
+          else{
+		  for(int j=1;j<=10;j++){
+           if(p[i][j].condition==0){
+                        t=0;
+            while(t<=p[i][j].y)
+                     {
+                        SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                     for(int m=1;m<=10;m++){
+                      for(int n=1;n<=10;n++){
+                      if( p[m][n].condition==1){gem[p[m][n].g].render(p[m][n].x,p[m][n].y);}
+                      }}
+     		         gem[p[i][j].g].render(p[i][j].x,t);t+=1;
+     		         SDL_RenderPresent( gRenderer );
+     		         SDL_Delay(0);
+
+            };
+                      p[i][j].condition=1;
+           }
+
+		  }
+         }
+
+}}
+
+
+void clearboard(plate p[12][12]){
+  int t=255;
+   Mix_PlayChannel( -1, diamond, 0 );
+    while(t>0){
+    SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                for(int i=1;i<=10;i++){
+                      for(int j=1;j<=10;j++){
+                    if(p[i][j].condition!=0) { gem[p[i][j].g].setAlpha( 255 );
+                            gem[p[i][j].g].render(p[i][j].x,p[i][j].y);}
+                    if(p[i][j].condition==0)  {gem[p[i][j].g].setAlpha( t );
+                            gem[p[i][j].g].render(p[i][j].x,p[i][j].y);}
+                      }}
+				SDL_RenderPresent( gRenderer );
+     SDL_Delay(1);
+     t--;
+    }
+    for(int i=1;i<=8;i++){gem[i].setAlpha(255);}
+for(int i=1;i<=10;i++){
+            for(int j=1;j<=10;j++){
+                if(p[i][j].condition==0){p[i][j].g=0;p[i][j].condition=1;}
+            }}
+}
+
+bool outofmove(plate p[12][12]){
+bool check=true;
+   int t=0;
+   for(int i=1;i<=10;i++){
+            for(int j=1;j<=10;j++){
+            if(j<=9 and p[i][j].g==p[i][j+1].g ){
+                if(j<=7 and p[i][j].g==p[i][j+3].g){check=false;break;}
+                if(i>=2 and j<=8 and p[i][j].g==p[i-1][j+2].g){check=false;break;}
+                if(i<=9 and j<=8 and p[i][j].g==p[i+1][j+2].g){check=false;break;}
+                if(j>=2 and i>=2 and p[i][j].g==p[i-1][j-1].g){check=false;break;}
+                if(i<=9 and j>=2 and p[i][j].g==p[i+1][j-1].g){check=false;break;}
+                if(j>=3 and p[i][j].g==p[i][j-2].g){check=false;break;}
+            }
+            if(j<=8 and p[i][j].g==p[i][j+2].g){
+                if(i>=2 and j<=9 and p[i][j].g==p[i-1][j+1].g){check=false;break;}
+                if(i<=9 and j<=9 and p[i][j].g==p[i+1][j+1].g){check=false;break;}
+            }
+        }
+   }
+      for(int i=1;i<=10;i++){
+            for(int j=1;j<=10;j++){
+            if(i<=9 and p[i][j].g==p[i+1][j].g ){
+                if(i<=7 and p[i][j].g==p[i+3][j].g){check=false;break;}
+                if(i<=8 and j<=9 and p[i][j].g==p[i+2][j+1].g){check=false;break;}
+                if(i<=8 and j>=2 and p[i][j].g==p[i+2][j-1].g){check=false;break;}
+                if(i>=3 and p[i][j].g==p[i-2][j].g){check=false;break;}
+                if(i>=2 and j<=9 and p[i][j].g==p[i-1][j+1].g){check=false;break;}
+                if(j>=2 and i>=2 and p[i][j].g==p[i-1][j-1].g){check=false;break;}
+            }
+            if(i<=8 and p[i][j].g==p[i+2][j].g){
+                if(i<=9 and j<=9 and p[i][j].g==p[i+1][j+1].g){check=false;break;}
+                if(i<=9 and j>=2 and p[i][j].g==p[i+1][j-1].g){check=false;break;}
+            }
+            }
+   }
+          // std::cout<<t<<" ";
+          return check;
+}
+
+int main( int argc, char* args[] )
+{
+
+	if( !init() )
+	{
+		printf( "Failed to initialize!\n" );
+	}
+	else
+	{
+        //Load media
+		if( !loadMedia() )
+		{
+			printf( "Failed to load media!\n" );
+		}
+		else
+		{
+
+		    bool quit_first = false;
+			SDL_Event e_first;
+			int tt=1;
+			int name_blend=255;
+			int pressenter_blend=0;
+		    while(!quit_first){
+                while( SDL_PollEvent( &e_first ) != 0 ){
+				        if( e_first.type == SDL_QUIT )
+					{
+						quit_first = true;
+					}
+				   else if(e_first.type == SDL_KEYDOWN){
+                         if(e_first.key.keysym.sym==13){quit_first=true; }
+                    }
+				}
+				SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    firstbackground.render( 0, 0 );
+                name.setAlpha(name_blend);
+                if(name_blend==0){tt=0;}
+                if(name_blend==255){tt=1;}
+                if(tt==1){name_blend--;pressenter_blend+=2;}
+                if(tt==0){name_blend++;pressenter_blend-=2;}
+                name.render(25,50);
+                pressenter.setAlpha(pressenter_blend);
+                pressenter.render(260,500);
+				SDL_RenderPresent( gRenderer );
+				SDL_Delay(3);
+
+            }
+
+		    cursor=cursor_n;int c=1;
+		    plate p[12][12];
+
+           for(;;){ getboard(p);if(!checkboard(p)){break;}}
+
+					//Play the music
+            //   if(Mix_PlayMusic(music, -1)==-1) {
+     //   printf("Mix_PlayMusic: %s\n", Mix_GetError());}
+
+   rerenderboardbk(p);
+
+			bool quit = false;
+			SDL_Event e;
+
+			while( !quit )
+			{
+				while( SDL_PollEvent( &e ) != 0 )
+				{
+					//User requests quit
+					if( e.type == SDL_QUIT )
+					{
+						quit = true;Mix_HaltMusic();
+					}
+					else if( e.type == SDL_KEYDOWN )
+					{
+						//Select surfaces based on key press
+						switch( e.key.keysym.sym )
+						{
+							case SDLK_UP:
+							if(y==40){y=571;a=10;break;}
+							y-=59;a--;
+							break;
+
+							case SDLK_DOWN:
+							if(y==571){y=40;a=1;break;}
+							y+=59;a++;
+							break;
+
+							case SDLK_LEFT:
+							if(x==68){x=599;b=10;break;}
+							x-=59;b--;
+							break;
+
+							case SDLK_RIGHT:
+							if(x==599){x=68;b=1;break;}
+							x+=59;b++;
+							break;
+
+                            case 32:
+                                Mix_PlayChannel( -1, select, 0 );
+                                //if(c==1) {cursor=cursor_h;c=0;}
+                                 //else {cursor=cursor_n;c=1;}
+                                 cursor=cursor_h;
+
+                       for(;;){
+                            int i=0;cursor=cursor_h;
+                            	SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                renderboard(p);
+                cursor.render(x,y);
+				SDL_RenderPresent( gRenderer );
+                        SDL_PollEvent(&e);
+                          if( e.type == SDL_KEYDOWN ){
+                                cursor=cursor_h;cursor.render(x,y);
+                        switch( e.key.keysym.sym ){
+                        case SDLK_RIGHT:swap_right(p,p[a][b],p[a][b+1]);i++;
+                                        if(!checkboard(p)){swap_right(p,p[a][b],p[a][b+1]);}
+                                        if(checkboard(p)){clearboard(p);};break;
+                        case SDLK_LEFT:swap_left(p,p[a][b],p[a][b-1]);i++;
+                                       if(!checkboard(p)){swap_left(p,p[a][b],p[a][b-1]);}
+                                       if(checkboard(p)){clearboard(p);};break;
+                        case SDLK_DOWN:swap_down(p,p[a][b],p[a+1][b]);i++;
+                                if(!checkboard(p)){swap_down(p,p[a][b],p[a+1][b]);}
+                                if(checkboard(p)){clearboard(p);};break;
+                        case SDLK_UP:swap_up(p,p[a][b],p[a-1][b]);i++;
+                                     if(!checkboard(p)){swap_up(p,p[a][b],p[a-1][b]);}
+                                     if(checkboard(p)){clearboard(p);};break;
+                        case 32: cursor=cursor_n;i++;break;
+                        default:
+                            break;
+                        }}
+                           cursor=cursor_n;
+                          if(i==1){break;}
+                       }
+
+
+							default:
+							   //std::cout<<e.key.keysym.sym<<" ";
+                             break;
+						}
+					}
+				}
+
+
+                      for(int j=10;j>=1;j--){
+                           for(int k=1;k<=6;k++)  {
+                            for(int i=2;i<=10;i++){
+                         if(p[i][j].g==0 and p[i-1][j].g!=0){swap_upBOOST2(p,p[i][j]);}
+                      }}}
+             for(;;){
+                if(!checkboard(p)){break;}
+                if(checkboard(p)){clearboard(p);
+                for(int j=10;j>=1;j--){
+                           for(int k=1;k<=6;k++)  {
+                            for(int i=2;i<=10;i++){
+                         if(p[i][j].g==0 and p[i-1][j].g!=0){swap_upBOOST2(p,p[i][j]);}
+                      }}}
+                }
+
+             }
+                 regetboard(p);
+                 rerenderboard2(p);
+				SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
+				SDL_RenderClear( gRenderer );
+     		    gBackgroundTexture.render( 0, 0 );
+                renderboard(p);
+                cursor.render(x,y);
+				SDL_RenderPresent( gRenderer );
+				if(outofmove(p)){for(;;){
+
+
+                        getboard(p);if(!checkboard(p)){break;}}}
+			}
+		}
+	}
+
+	//Free resources and close SDL
+	close();
+   return 0;
+}
